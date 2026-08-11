@@ -85,6 +85,7 @@ class TranscriptionEngine(
         scope.launch { transcriber?.reset(); _state.value = TranscriptionState.IDLE }
     }
 
-    suspend fun transcribeFile(audio: FloatArray): String =
-        (transcriber as? LocalTranscriptionBackend)?.transcribeOnce(audio) ?: ""
+    suspend fun transcribeFile(audio: FloatArray, onSegment: (String) -> Unit) {
+        (transcriber as? LocalTranscriptionBackend)?.transcribeFileChunked(audio, onSegment)
+    }
 }

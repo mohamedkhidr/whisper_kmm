@@ -174,11 +174,14 @@ class DictationViewModel {
                 val audio = withContext(Dispatchers.IO) {
                     WavFileReader.readToFloatArray(File(filePath))
                 }
-                val text = eng.transcribeFile(audio)
-                if (text.isNotBlank()) {
-                    val current = _transcriptionText.value
-                    _transcriptionText.value =
-                        if (current.isEmpty()) text else "$current\n\n$text"
+                var isFirstSegment = _transcriptionText.value.isEmpty()
+                eng.transcribeFile(audio) { segment ->
+                    _transcriptionText.value = if (isFirstSegment) {
+                        isFirstSegment = false
+                        segment
+                    } else {
+                        "${_transcriptionText.value} $segment"
+                    }
                 }
             } catch (e: Exception) {
                 _error.value = "WAV transcription failed: ${e.message}"

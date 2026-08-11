@@ -45,9 +45,26 @@ class LocalTranscriptionBackend(
 
     override suspend fun release() { whisper?.release() }
 
-    suspend fun transcribeOnce(audio: FloatArray): String {
-        val words = whisper?.transcribe(audio, transcriptionLanguage, "") ?: return ""
-        return words.joinToString(" ") { it.text }
+    // Splits audio into 25-second segments — whisper's safe context window.
+    // Each segment uses the previous result as initialPrompt for cross-boundary continuity.
+    suspend fun transcribeFileChunked(audio: FloatArray, onSegment: (String) -> Unit) {
+        val segmentSamples = 25 * LocalASRProcessor.SAMPLING_RATE
+        var prompt = ""
+        var offset = 0
+        while (offset < audio.size) {
+            val end = minOf(offset + segmentSamples, audio.size)
+            val words = whisper?.transcribe(
+                audio.copyOfRange(offset, end),
+                transcriptionLanguage,
+                prompt
+            ) ?: emptyList()
+            val text = words.joinToString(" ") { it.text }.trim()
+            if (text.isNotBlank()) {
+                onSegment(text)
+                prompt = text.takeLast(200)
+            }
+            offset = end
+        }
     }
 }
 
