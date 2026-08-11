@@ -86,7 +86,7 @@ class LocalASRProcessor(
             audioArray    = audioBuffer.toFloatArray()
             audioDuration = audioArray.size.toFloat() / SAMPLING_RATE
         }
-
+        println("============= iteration ============ ${audioArray.size}")
         val words = asr.transcribe(audioArray, language, promptText)
         transcriptBuffer.insert(words, bufferTimeOffset)
         val flushed = transcriptBuffer.flush()

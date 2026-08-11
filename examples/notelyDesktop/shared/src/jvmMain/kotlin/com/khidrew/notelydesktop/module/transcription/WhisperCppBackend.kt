@@ -25,6 +25,7 @@ class WhisperCppBackend private constructor(
                     data          = audio,
                     initialPrompt = initPrompt
                 )
+                println("================= $text =============")
                 val duration = audio.size / 16000f
                 words.addAll(parseTextToWords(text, duration))
             }

@@ -115,13 +115,16 @@ class DictationViewModel {
         scope.launch(Dispatchers.IO) {
             val tempFile = File(modelDir, "$MODEL_NAME.tmp")
             try {
+                println("================ start ============ ")
                 withContext(Dispatchers.Main) { _downloadProgress.value = 0f }
 
                 val connection = URL(MODEL_URL).openConnection() as HttpURLConnection
                 connection.connect()
                 val total = connection.contentLengthLong
+                println("================ $MODEL_URL ============ ")
 
                 connection.inputStream.use { input ->
+                    println("================ inputStream ============ ")
                     tempFile.outputStream().use { output ->
                         val buffer = ByteArray(8192)
                         var downloaded = 0L
@@ -131,6 +134,7 @@ class DictationViewModel {
                             downloaded += read
                             if (total > 0) {
                                 val progress = downloaded.toFloat() / total
+                                println("================ $progress ============ ")
                                 _downloadProgress.value = progress
                             }
                         }
@@ -142,6 +146,7 @@ class DictationViewModel {
                 _downloadProgress.value = null
                 createAndInitEngine()
             } catch (e: Exception) {
+                println("======== ${e.message} =============")
                 tempFile.delete()
                 _downloadProgress.value = null
                 _error.value = "Download failed: ${e.message}"

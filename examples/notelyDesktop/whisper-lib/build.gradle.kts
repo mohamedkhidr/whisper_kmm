@@ -6,6 +6,17 @@ dependencies {
     implementation(libs.kotlinx.coroutinesCore)
 }
 
+val cmakeExecutable: String by lazy {
+    val candidates = listOf(
+        "/usr/local/bin/cmake",      // Intel Homebrew (confirmed via `which cmake`)
+        "/opt/homebrew/bin/cmake",   // Apple Silicon Homebrew, in case this runs on both
+        "/usr/bin/cmake",
+        "cmake"                      // fallback — works fine on Windows
+    )
+    candidates.firstOrNull { it == "cmake" || File(it).exists() }
+        ?: error("cmake not found on this machine — install with 'brew install cmake'")
+}
+
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
 val nativeSrcDir    = projectDir.resolve("src/main/cpp")
@@ -33,7 +44,7 @@ val configureNative by tasks.registering(Exec::class) {
 
     workingDir = cmakeBuildDir
     commandLine(
-        "cmake", srcDir.absolutePath,
+        cmakeExecutable, srcDir.absolutePath,
         "-DCMAKE_BUILD_TYPE=Release",
         "-DWHISPER_LIB_DIR=$whisperRoot"
     )
@@ -52,7 +63,7 @@ val buildNative by tasks.registering(Exec::class) {
     outputs.dir(nativeOutputDir)
 
     workingDir = cmakeBuildDir
-    commandLine("cmake", "--build", ".", "--config", "Release")
+    commandLine(cmakeExecutable, "--build", ".", "--config", "Release")
 }
 
 // ── Bundle into JAR resources ─────────────────────────────────────────────────
