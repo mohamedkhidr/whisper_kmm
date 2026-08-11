@@ -44,6 +44,11 @@ class LocalTranscriptionBackend(
     override suspend fun startProcessingLoop() { processor.start() }
 
     override suspend fun release() { whisper?.release() }
+
+    suspend fun transcribeOnce(audio: FloatArray): String {
+        val words = whisper?.transcribe(audio, transcriptionLanguage, "") ?: return ""
+        return words.joinToString(" ") { it.text }
+    }
 }
 
 fun ShortArray.toAudioFloatArray(): FloatArray = FloatArray(size) { i -> this[i] / 32768.0f }

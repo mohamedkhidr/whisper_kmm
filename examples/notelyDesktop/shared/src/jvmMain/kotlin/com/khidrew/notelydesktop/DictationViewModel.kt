@@ -1,5 +1,6 @@
 package com.khidrew.notelydesktop
 
+import com.khidrew.notelydesktop.module.recorder.WavFileReader
 import com.khidrew.notelydesktop.module.transcription.TranscriptionEngine
 import com.khidrew.notelydesktop.module.transcription.TranscriptionState
 import kotlinx.coroutines.CoroutineScope
@@ -47,8 +48,11 @@ class DictationViewModel {
     val showDownloadDialog = _showDownloadDialog.asStateFlow()
 
     // null = not downloading, 0f–1f = progress
-    private val _downloadProgress   = MutableStateFlow<Float?>(null)
+    private val _downloadProgress    = MutableStateFlow<Float?>(null)
     val downloadProgress = _downloadProgress.asStateFlow()
+
+    private val _isTranscribingFile  = MutableStateFlow(false)
+    val isTranscribingFile = _isTranscribingFile.asStateFlow()
 
     init {
         if (modelFile.exists()) {
@@ -150,6 +154,36 @@ class DictationViewModel {
                 tempFile.delete()
                 _downloadProgress.value = null
                 _error.value = "Download failed: ${e.message}"
+            }
+        }
+    }
+
+    fun transcribeWavFile(filePath: String) {
+        val eng = engine
+        if (eng == null || !eng.isReady()) {
+            _error.value = "Engine not ready. Wait for the model to finish loading."
+            return
+        }
+        if (_isRecording.value) {
+            _error.value = "Stop recording before transcribing a file."
+            return
+        }
+        scope.launch {
+            try {
+                _isTranscribingFile.value = true
+                val audio = withContext(Dispatchers.IO) {
+                    WavFileReader.readToFloatArray(File(filePath))
+                }
+                val text = eng.transcribeFile(audio)
+                if (text.isNotBlank()) {
+                    val current = _transcriptionText.value
+                    _transcriptionText.value =
+                        if (current.isEmpty()) text else "$current\n\n$text"
+                }
+            } catch (e: Exception) {
+                _error.value = "WAV transcription failed: ${e.message}"
+            } finally {
+                _isTranscribingFile.value = false
             }
         }
     }

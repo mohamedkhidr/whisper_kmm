@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -24,6 +25,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -37,44 +39,54 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.khidrew.notelydesktop.module.transcription.TranscriptionState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 @Composable
 fun DictationScreen() {
     val viewModel = remember { DictationViewModel() }
     DisposableEffect(Unit) { onDispose { viewModel.release() } }
 
-    var transcriptionText  by remember { mutableStateOf("") }
-    var isRecording        by remember { mutableStateOf(false) }
-    var engineState        by remember { mutableStateOf(TranscriptionState.INITIALIZING) }
-    var error              by remember { mutableStateOf<String?>(null) }
-    var showDownloadDialog by remember { mutableStateOf(false) }
-    var downloadProgress   by remember { mutableStateOf<Float?>(null) }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { viewModel.transcriptionText.collect  { transcriptionText  = it } }
-    LaunchedEffect(Unit) { viewModel.isRecording.collect        { isRecording        = it } }
-    LaunchedEffect(Unit) { viewModel.engineState.collect        { engineState        = it } }
-    LaunchedEffect(Unit) { viewModel.error.collect              { error              = it } }
-    LaunchedEffect(Unit) { viewModel.showDownloadDialog.collect { showDownloadDialog = it } }
-    LaunchedEffect(Unit) { viewModel.downloadProgress.collect   { downloadProgress   = it } }
+    var transcriptionText    by remember { mutableStateOf("") }
+    var isRecording          by remember { mutableStateOf(false) }
+    var engineState          by remember { mutableStateOf(TranscriptionState.INITIALIZING) }
+    var error                by remember { mutableStateOf<String?>(null) }
+    var showDownloadDialog   by remember { mutableStateOf(false) }
+    var downloadProgress     by remember { mutableStateOf<Float?>(null) }
+    var isTranscribingFile   by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { viewModel.transcriptionText.collect   { transcriptionText   = it } }
+    LaunchedEffect(Unit) { viewModel.isRecording.collect         { isRecording         = it } }
+    LaunchedEffect(Unit) { viewModel.engineState.collect         { engineState         = it } }
+    LaunchedEffect(Unit) { viewModel.error.collect               { error               = it } }
+    LaunchedEffect(Unit) { viewModel.showDownloadDialog.collect  { showDownloadDialog  = it } }
+    LaunchedEffect(Unit) { viewModel.downloadProgress.collect    { downloadProgress    = it } }
+    LaunchedEffect(Unit) { viewModel.isTranscribingFile.collect  { isTranscribingFile  = it } }
 
     val scrollState = rememberScrollState()
     LaunchedEffect(transcriptionText) { scrollState.animateScrollTo(scrollState.maxValue) }
 
     val isDownloading        = downloadProgress != null
     val isEngineInitializing = engineState == TranscriptionState.INITIALIZING
-    val fabEnabled           = !isDownloading && !isEngineInitializing
+    val fabEnabled           = !isDownloading && !isEngineInitializing && !isTranscribingFile
 
     val fabColor by animateColorAsState(
         targetValue = when {
-            isRecording -> MaterialTheme.colorScheme.error
-            !fabEnabled -> MaterialTheme.colorScheme.surfaceVariant
-            else        -> MaterialTheme.colorScheme.primary
+            isRecording        -> MaterialTheme.colorScheme.error
+            !fabEnabled        -> MaterialTheme.colorScheme.surfaceVariant
+            else               -> MaterialTheme.colorScheme.primary
         },
         animationSpec = tween(300),
         label = "fabColor"
@@ -130,18 +142,47 @@ fun DictationScreen() {
                     text = when {
                         isDownloading          -> "Downloading model… ${((downloadProgress ?: 0f) * 100).toInt()}%"
                         isEngineInitializing   -> "Loading model…"
+                        isTranscribingFile     -> "Transcribing file…"
                         isRecording            -> "Listening…"
                         engineState == TranscriptionState.PROCESSING -> "Processing…"
                         else                   -> "Click the mic to start dictating"
                     },
                     style  = MaterialTheme.typography.bodySmall,
                     color  = when {
-                        isRecording  -> MaterialTheme.colorScheme.error
-                        isDownloading -> MaterialTheme.colorScheme.primary
-                        else          -> MaterialTheme.colorScheme.onSurfaceVariant
+                        isRecording        -> MaterialTheme.colorScheme.error
+                        isTranscribingFile -> MaterialTheme.colorScheme.tertiary
+                        isDownloading      -> MaterialTheme.colorScheme.primary
+                        else               -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     modifier = Modifier.weight(1f)
                 )
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            val path = withContext(Dispatchers.IO) {
+                                val chooser = JFileChooser().apply {
+                                    dialogTitle  = "Select WAV file"
+                                    fileFilter   = FileNameExtensionFilter("WAV audio (*.wav)", "wav")
+                                    isMultiSelectionEnabled = false
+                                }
+                                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
+                                    chooser.selectedFile.absolutePath
+                                else null
+                            }
+                            path?.let { viewModel.transcribeWavFile(it) }
+                        }
+                    },
+                    enabled = fabEnabled && !isRecording,
+                ) {
+                    Icon(
+                        imageVector        = Icons.Filled.AudioFile,
+                        contentDescription = "Transcribe WAV file",
+                        tint = if (fabEnabled && !isRecording)
+                                   MaterialTheme.colorScheme.primary
+                               else
+                                   MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
                 if (transcriptionText.isNotEmpty() && !isRecording) {
                     TextButton(onClick = { viewModel.clearText() }) { Text("Clear") }
                 }
