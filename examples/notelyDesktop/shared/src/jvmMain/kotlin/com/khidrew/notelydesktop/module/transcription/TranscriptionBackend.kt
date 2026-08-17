@@ -6,7 +6,7 @@ interface TranscriptionBackend {
     suspend fun init(onSuccess: () -> Unit)
     fun reset()
     fun isReady(): Boolean
-    suspend fun feed(audio: ShortArray)
+    suspend fun feed(audio: FloatArray)
     fun listenForTranscriptionResults(): StateFlow<String>
     suspend fun finishTranscription()
     suspend fun release()

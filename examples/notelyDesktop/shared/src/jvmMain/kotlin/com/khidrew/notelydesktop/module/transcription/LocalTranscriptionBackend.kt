@@ -33,8 +33,8 @@ class LocalTranscriptionBackend(
 
     override fun isReady(): Boolean = whisper?.canTranscribe() == true
 
-    override suspend fun feed(audio: ShortArray) {
-        processor.insertAudioChunk(audio.toAudioFloatArray())
+    override suspend fun feed(audio: FloatArray) {
+        processor.insertAudioChunk(audio)
     }
 
     override fun listenForTranscriptionResults(): StateFlow<String> = processor.transcriptionResult
@@ -68,4 +68,3 @@ class LocalTranscriptionBackend(
     }
 }
 
-fun ShortArray.toAudioFloatArray(): FloatArray = FloatArray(size) { i -> this[i] / 32768.0f }

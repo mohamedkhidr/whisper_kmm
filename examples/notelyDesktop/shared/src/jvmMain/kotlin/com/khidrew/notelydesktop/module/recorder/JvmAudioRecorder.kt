@@ -15,8 +15,8 @@ class JvmAudioRecorder : AudioSource {
     companion object {
         const val TARGET_RATE = 16000
 
-        // Tried in order — first supported format wins.
-        // macOS typically doesn't support 16kHz natively; falls back to 44100/48000.
+        // Tried in order — first format the OS actually supports wins.
+        // macOS hardware runs at 44100/48000 Hz; requesting 16kHz may silently give wrong data.
         private val CANDIDATE_FORMATS = listOf(
             AudioFormat(16000f, 16, 1, true, false),
             AudioFormat(44100f, 16, 1, true, false),
@@ -30,17 +30,18 @@ class JvmAudioRecorder : AudioSource {
         )
     }
 
-    override fun audioStream(): Flow<ShortArray> = flow {
+    // Emit FloatArray at 16kHz — same as iOS AVAudioConverter → floatChannelData output.
+    override fun audioStream(): Flow<FloatArray> = flow {
         val (line, fmt) = openBestLine()
         val captureRate     = fmt.sampleRate.toInt()
         val captureChannels = fmt.channels
         val isBigEndian     = fmt.isBigEndian
 
-        // Read enough bytes to capture ~100ms after resampling, aligned to frame boundary
-        val targetBytes   = 3200 // 1600 samples × 2 bytes at 16kHz = 100ms
-        val frameBytes    = captureChannels * 2
-        val rawBytesApprox = (targetBytes.toDouble() * captureChannels * captureRate / TARGET_RATE).toInt()
-        val readBytes     = ((rawBytesApprox + frameBytes - 1) / frameBytes) * frameBytes
+        // Size the read buffer to capture ~100ms at the native rate, frame-aligned
+        val frameBytes      = captureChannels * 2
+        val targetFrames    = TARGET_RATE / 10           // 100ms = 1600 frames at 16kHz
+        val nativeFrames    = (targetFrames.toDouble() * captureRate / TARGET_RATE).toInt()
+        val readBytes       = nativeFrames * frameBytes
 
         val bytes = ByteArray(readBytes)
         try {
@@ -49,9 +50,9 @@ class JvmAudioRecorder : AudioSource {
                 val read = line.read(bytes, 0, bytes.size)
                 if (read <= 0) throw AudioSourceException.AudioReadingError()
 
-                // Decode interleaved bytes → mono ShortArray (average channels, handle endianness)
+                // Decode interleaved 16-bit PCM → mono float [-1, 1], handling endianness
                 val frameCount = read / frameBytes
-                val mono = ShortArray(frameCount) { i ->
+                val mono = FloatArray(frameCount) { i ->
                     var sum = 0L
                     for (ch in 0 until captureChannels) {
                         val off = (i * captureChannels + ch) * 2
@@ -60,9 +61,10 @@ class JvmAudioRecorder : AudioSource {
                         else
                             ((bytes[off + 1].toInt() shl 8) or (bytes[off].toInt() and 0xFF)).toShort()
                     }
-                    (sum / captureChannels).toShort()
+                    (sum / captureChannels).toFloat() / 32768f
                 }
 
+                // Resample to TARGET_RATE if the hardware runs at a different rate
                 emit(if (captureRate == TARGET_RATE) mono else resample(mono, captureRate, TARGET_RATE))
             }
         } catch (e: CancellationException) {
@@ -91,22 +93,23 @@ class JvmAudioRecorder : AudioSource {
         throw AudioSourceException.AudioRecordingError()
     }
 
-    private fun resample(input: ShortArray, srcRate: Int, dstRate: Int): ShortArray {
+    // Linear interpolation resampler — same role as AVAudioConverter on iOS
+    private fun resample(input: FloatArray, srcRate: Int, dstRate: Int): FloatArray {
         val ratio = srcRate.toDouble() / dstRate
         val len   = (input.size / ratio).toInt()
-        return ShortArray(len) { i ->
+        return FloatArray(len) { i ->
             val pos  = i * ratio
             val idx  = pos.toInt()
             val frac = (pos - idx).toFloat()
-            val a    = input.getOrElse(idx)     { 0 }.toFloat()
-            val b    = input.getOrElse(idx + 1) { 0 }.toFloat()
-            (a + (b - a) * frac).toInt().toShort()
+            val a    = input.getOrElse(idx)     { 0f }
+            val b    = input.getOrElse(idx + 1) { 0f }
+            a + (b - a) * frac
         }
     }
 }
 
-fun Flow<ShortArray>.chunked(chunkSize: Int): Flow<ShortArray> = flow {
-    val accumulator = ShortArray(chunkSize)
+fun Flow<FloatArray>.chunked(chunkSize: Int): Flow<FloatArray> = flow {
+    val accumulator = FloatArray(chunkSize)
     var filled = 0
     collect { buffer ->
         var offset = 0

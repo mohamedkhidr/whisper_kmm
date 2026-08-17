@@ -2,6 +2,7 @@ package com.khidrew.notelydesktop.module.transcription
 
 import com.khidrew.notelydesktop.module.recorder.JvmAudioRecorder
 import com.khidrew.notelydesktop.module.recorder.chunked
+import com.khidrew.notelydesktop.module.recorder.JvmAudioRecorder.Companion.TARGET_RATE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,7 +52,7 @@ class TranscriptionEngine(
         processingJob = scope.launch { transcriber?.startProcessingLoop() }
         audioStreamJob = scope.launch {
             audioSource?.audioStream()
-                ?.chunked(100)
+                ?.chunked(TARGET_RATE)   // accumulate 1 second of float samples before feeding
                 ?.catch { e ->
                     e.printStackTrace()
                     _state.value = TranscriptionState.IDLE

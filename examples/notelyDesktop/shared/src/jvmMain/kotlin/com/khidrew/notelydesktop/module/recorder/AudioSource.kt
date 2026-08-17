@@ -3,7 +3,7 @@ package com.khidrew.notelydesktop.module.recorder
 import kotlinx.coroutines.flow.Flow
 
 interface AudioSource {
-    fun audioStream(): Flow<ShortArray>
+    fun audioStream(): Flow<FloatArray>
 }
 
 sealed class AudioSourceException : Exception() {
